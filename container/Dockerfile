@@ -48,6 +48,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ca-certificates \
         curl \
         git \
+        python3-venv \
         tini \
         unzip \
     && if [ "$INSTALL_CJK_FONTS" = "true" ]; then \
@@ -105,6 +106,27 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 COPY cli-tools.json install-cli-tools.sh /tmp/
 RUN --mount=type=cache,target=/root/.cache/pnpm \
     sh /tmp/install-cli-tools.sh /tmp/cli-tools.json
+
+# ---- yt-dlp ------------------------------------------------------------------
+# Installed into an isolated venv, NOT via apt (Debian ships 2023.03.04, which
+# YouTube's current extraction surface breaks) and NOT via the standalone
+# PyInstaller build.
+#
+# The venv is load-bearing for TLS, not just isolation. Agent containers route
+# all egress through the OneCLI gateway, a TLS-intercepting proxy whose CA is
+# mounted at runtime and pointed to by SSL_CERT_FILE. yt-dlp prefers certifi's
+# bundle over the system store whenever certifi is importable, and honors none
+# of SSL_CERT_FILE / REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE in that path — so it
+# rejects the gateway with CERTIFICATE_VERIFY_FAILED. A venv without
+# --system-site-packages cannot see dist-packages, so certifi is absent, yt-dlp
+# falls back to ssl.load_default_certs(), and SSL_CERT_FILE is honored.
+# Verification stays fully enabled; do not "fix" this with
+# --no-check-certificates.
+ARG YT_DLP_VERSION=2026.7.4
+RUN python3 -m venv /opt/yt-dlp && \
+    /opt/yt-dlp/bin/pip install --no-cache-dir --quiet "yt-dlp==${YT_DLP_VERSION}" && \
+    ln -s /opt/yt-dlp/bin/yt-dlp /usr/local/bin/yt-dlp && \
+    /usr/local/bin/yt-dlp --version
 
 # ---- ncl CLI wrapper ----------------------------------------------------------
 # Actual script lives in the mounted source at /app/src/cli/ncl.ts.
