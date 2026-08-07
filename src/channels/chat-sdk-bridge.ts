@@ -99,6 +99,14 @@ export interface ChatSdkBridgeConfig {
  * platform, which is the same behavior as manually re-opening a fence.
  */
 /**
+ * Separator `@chat-adapter/discord` uses to pack a button's value into
+ * `custom_id` (`${actionId}\n${value}`). The adapter splits it back out for
+ * `chat.onAction`, but Gateway interactions reach the local webhook server
+ * with the raw `custom_id`, so that path has to strip it itself.
+ */
+const DISCORD_CUSTOM_ID_DELIMITER = '\n';
+
+/**
  * Decode the actual option value from a button callback. Buttons are encoded
  * with an integer index (to keep under Telegram's 64-byte callback_data cap),
  * and the real value is looked up via `getAskQuestionRender(questionId)`.
@@ -703,14 +711,26 @@ async function handleForwardedEvent(
       const interactionId = interaction.id as string;
       const interactionToken = interaction.token as string;
 
-      // Parse the selected option from custom_id
+      // Parse the selected option from custom_id.
+      //
+      // The Discord adapter packs the button's value into custom_id as
+      // `${actionId}\n${value}` (DISCORD_CUSTOM_ID_DELIMITER). The
+      // chat.onAction path gets that split for it by decodeDiscordCustomId,
+      // but Gateway interactions land here with the raw custom_id, so strip
+      // the value suffix first — otherwise `tail` is "<idx>\n<value>", the
+      // numeric-index test in resolveSelectedOption fails on the newline,
+      // and the garbage propagates to the host as the selected option.
       let questionId: string | undefined;
       let tail: string | undefined;
+      let encodedValue: string | undefined;
       if (customId?.startsWith('ncq:')) {
-        const colonIdx = customId.indexOf(':', 4); // after "ncq:"
+        const nlIdx = customId.indexOf(DISCORD_CUSTOM_ID_DELIMITER);
+        const actionId = nlIdx === -1 ? customId : customId.slice(0, nlIdx);
+        encodedValue = nlIdx === -1 ? undefined : customId.slice(nlIdx + 1);
+        const colonIdx = actionId.indexOf(':', 4); // after "ncq:"
         if (colonIdx !== -1) {
-          questionId = customId.slice(4, colonIdx);
-          tail = customId.slice(colonIdx + 1);
+          questionId = actionId.slice(4, colonIdx);
+          tail = actionId.slice(colonIdx + 1);
         }
       }
 
@@ -721,7 +741,7 @@ async function handleForwardedEvent(
       const render = questionId ? getAskQuestionRender(questionId) : undefined;
       // Discord custom_id mirrors the new index-based encoding (see Button
       // construction). Decode back to the real option value for downstream.
-      const selectedOption = resolveSelectedOption(render, tail, tail);
+      const selectedOption = resolveSelectedOption(render, encodedValue, tail);
       const cardTitle = render?.title ?? ((originalEmbeds[0]?.title as string) || '❓ Question');
       const matchedOpt = render?.options.find((o) => o.value === selectedOption);
       const selectedLabel = matchedOpt?.selectedLabel ?? selectedOption ?? customId;
