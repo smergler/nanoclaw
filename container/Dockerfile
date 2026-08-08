@@ -47,6 +47,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libxshmfence1 \
         ca-certificates \
         curl \
+        ffmpeg \
         git \
         python3-venv \
         tini \
@@ -122,6 +123,13 @@ RUN --mount=type=cache,target=/root/.cache/pnpm \
 # falls back to ssl.load_default_certs(), and SSL_CERT_FILE is honored.
 # Verification stays fully enabled; do not "fix" this with
 # --no-check-certificates.
+#
+# ffmpeg (in system deps above) is required, not optional. yt-dlp fetches video
+# and audio as separate streams for anything above 360p and needs ffmpeg to mux
+# them. Without it the download "succeeds", records to --download-archive, and
+# silently leaves a muted video file next to an audio-only one — with only a
+# WARNING, not an error. It used to arrive transitively via Debian's apt yt-dlp
+# package; that dependency is gone now, so it is declared explicitly.
 ARG YT_DLP_VERSION=2026.7.4
 RUN python3 -m venv /opt/yt-dlp && \
     /opt/yt-dlp/bin/pip install --no-cache-dir --quiet "yt-dlp==${YT_DLP_VERSION}" && \
