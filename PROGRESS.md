@@ -37,3 +37,8 @@ Phases 1–2 are surface-independent and may be built at any time.
 - `sess-1784346851456-5m8tcr` has a corrupted session DB — `[agent-runner] Fatal error: database
   disk image is malformed`. Not addressed. Not in any of the seven fix notes.
 - Fix 02's `grep 'signal:\${'` test was stale and gave a false negative; corrected in the note.
+- **Loop Builder cannot write to any mounted repo.** `container-runner.ts:514` →
+  `readonlyMountArgs` → hardcoded `:ro`. No config changes it. This has failed the trip_planner
+  task 5 consecutive runs (auto-pause at 8) and blocks queuing ncl-doctor for the loop. Its
+  `persona.md` claims the mount is read-write, which is why the agent kept waiting for a fix that
+  cannot come. Queue entry + unblock options: `groups/loop-builder/QUEUE.md` (gitignored).
