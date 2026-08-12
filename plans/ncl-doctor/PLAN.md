@@ -149,15 +149,36 @@ state. Otherwise a flaky Docker daemon pages the operator all night.
 
 ### Task 2.3 — Deliver the DM
 
-Use `pickApprover(agentGroupId)` + `pickApprovalDelivery` from
-`src/modules/approvals/primitive.ts`. This path exists and is currently unused for host health.
+**Verified 2026-08-12 — the delivery path survives the outage it detects.**
+`requestApproval` (`src/modules/approvals/primitive.ts:263`) sends through
+`getDeliveryAdapter().deliver(...)`, host-side, with no container spawn anywhere on the path. An
+unreachable mount stops containers; it does not stop the alert. This was the plan's biggest open
+risk and it is closed.
 
-Note the ordering hazard: approvers resolve from `user_roles`, and **an unreachable mount may be
-why the delivery container cannot start.** Delivery must not depend on spawning a container. Verify
-which adapters can send without one; if none can, that limitation goes in the plan's failure notes
-rather than being discovered at 3am.
+**But do not call `requestApproval`.** It takes a `session: Session` and uses it for the approver
+scope, the origin channel type, and the `pending_approvals` row. A host-health alert has no
+session, and it is not an approval — nobody is being asked to authorize anything. Assemble the
+three pieces directly:
 
-**Done when:** healthy→failing→healthy produces exactly two DMs (`features.json` `ncl-doctor-2`).
+```
+pickApprover(null)                          // global admins, then owners
+  → pickApprovalDelivery(approvers, '')     // first reachable DM
+  → getDeliveryAdapter().deliver(...)       // plain text, not an ask_question card
+```
+
+Two hazards on that path:
+
+1. **`pickApprovalDelivery` → `ensureUserDm` may call the adapter's `openDM` on cache miss, and the
+   installed Signal adapter has no `openDM`** (verified: 0 occurrences). Today `user_dms` is warm so
+   it resolves from cache, but a cache miss during an outage fails silently. Prefer a cached
+   messaging group; treat a miss as a hard error worth logging loudly, not a retry.
+2. **Alert legibility.** The DM arrives on the same Signal thread, from the same agent, as routine
+   chatter — including a build loop that has DM'd "still blocked" five times. The severity of the
+   condition does not transmit on its own; the *message* has to carry it. Lead with the outage
+   scope ("all N sessions cannot start"), not the check name.
+
+**Done when:** healthy→failing→healthy produces exactly two DMs (`features.json` `ncl-doctor-2`),
+and one of them is triggered with the Docker VM share genuinely broken, not simulated.
 
 ### Task 2.4 — Spawn backoff at the source
 
