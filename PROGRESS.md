@@ -37,8 +37,17 @@ Phases 1–2 are surface-independent and may be built at any time.
 - `sess-1784346851456-5m8tcr` has a corrupted session DB — `[agent-runner] Fatal error: database
   disk image is malformed`. Not addressed. Not in any of the seven fix notes.
 - Fix 02's `grep 'signal:\${'` test was stale and gave a false negative; corrected in the note.
-- **Loop Builder cannot write to any mounted repo.** `container-runner.ts:514` →
-  `readonlyMountArgs` → hardcoded `:ro`. No config changes it. This has failed the trip_planner
-  task 5 consecutive runs (auto-pause at 8) and blocks queuing ncl-doctor for the loop. Its
-  `persona.md` claims the mount is read-write, which is why the agent kept waiting for a fix that
-  cannot come. Queue entry + unblock options: `groups/loop-builder/QUEUE.md` (gitignored).
+- **Loop Builder's trip_planner mount is read-only when it should be read-write.** Root cause
+  found — and an earlier note in this log calling it architectural was **wrong**. RW mounts are
+  supported (`container-runner.ts:512-518` branches on `mount.readonly`). But
+  `mount-security/index.ts:368` requires `readonly === false` *explicitly*, and the stored config
+  omits the key, so it is denied by default. The allowlist has granted `allowReadWrite: true` for
+  that path all along. Fix is one field on `container_configs.additional_mounts` + a group restart.
+  5 consecutive task failures traced to this; auto-pause at 8.
+- **`ncl groups config add-mount` cannot create a read-write mount at all.**
+  `cli/resources/groups.ts:469` sets `readonly: true` for `--ro` and otherwise *omits* the key —
+  never `false`. So every mount added via the CLI is read-only regardless of the allowlist, and
+  `allowReadWrite: true` is silently unreachable through the supported interface. Novel; worth
+  reporting upstream. Fix: add a `--rw` flag emitting `readonly: false`, leave the omitted case
+  read-only so the safe default is unchanged.
+- Details and the exact SQL: `groups/loop-builder/QUEUE.md` (gitignored).
