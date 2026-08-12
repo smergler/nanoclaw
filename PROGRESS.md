@@ -37,10 +37,13 @@ Phases 1–2 are surface-independent and may be built at any time.
 - `sess-1784346851456-5m8tcr` has a corrupted session DB — `[agent-runner] Fatal error: database
   disk image is malformed`. Not addressed. Not in any of the seven fix notes.
 - Fix 02's `grep 'signal:\${'` test was stale and gave a false negative; corrected in the note.
-- ✅ **FIXED 2026-08-12 — Loop Builder's trip_planner mount is now read-write.** `readonly: false`
-  set on the stored config; verified by running `validateAdditionalMounts` against both shapes
-  (key omitted → `readonly=true`; explicit false → `readonly=false`). Not yet proven by a real
-  run — the next 02:00 task is the actual test. Original diagnosis below, kept for the record:
+- ✅ **FIXED and VERIFIED ON A LIVE CONTAINER 2026-08-12 — Loop Builder's trip_planner mount is
+  read-write.** `readonly: false` set on the stored config; run fired early with
+  `ncl tasks run --id trip-planner-build-722c`. `docker inspect` on the resulting container:
+  `/Users/smergler/funstuff/trip_planner -> /workspace/extra/trip_planner RW=true`. All four links
+  confirmed: stored config → `validateAdditionalMounts` → re-materialized `container.json` →
+  live mount. A `:ro` probe on the same image reproduces the agent's exact error string
+  ("Read-only file system"), closing the loop on the diagnosis. Original write-up below:
 - **Loop Builder's trip_planner mount is read-only when it should be read-write.** Root cause
   found — and an earlier note in this log calling it architectural was **wrong**. RW mounts are
   supported (`container-runner.ts:512-518` branches on `mount.readonly`). But
