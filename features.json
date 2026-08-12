@@ -1,0 +1,64 @@
+{
+  "_rules": "Entries may NEVER be edited or removed. The only permitted change is status: 'failing' -> 'passing', and only after the criteria were verified against the running application.",
+  "features": [
+    {
+      "id": "ncl-doctor-1",
+      "feature": "Mount reachability probe detects what existence checks miss",
+      "criteria": [
+        "A configured additional_mount whose host path does not exist is reported as failing",
+        "A configured additional_mount whose host path EXISTS and is readable but which docker refuses with exit 125 is reported as failing — this is the case fs.realpathSync passes and is the whole reason the check exists",
+        "The report names the host-path-exists contradiction explicitly, so the reader does not start by ls-ing a directory that is demonstrably fine",
+        "Distinct host paths are deduped — two groups sharing one mount produce one probe, not two",
+        "A probe that hangs is killed by a timeout and reported as inconclusive, never wedging the caller",
+        "A non-125 non-zero exit is reported as a distinct category from a 125, because it means the image or entrypoint is wrong rather than the mount"
+      ],
+      "status": "failing"
+    },
+    {
+      "id": "ncl-doctor-2",
+      "feature": "Escalation fires on state transition, not on every failure",
+      "criteria": [
+        "healthy -> failing -> healthy produces exactly two admin DMs, not one per check run",
+        "A check that stays failing across many consecutive runs produces no further DMs after the first",
+        "Recovery produces a DM saying it recovered",
+        "Transition state survives a host restart — a restart during a failing period does not re-fire the alert",
+        "With every check healthy the runner produces no output and sends no DM"
+      ],
+      "status": "failing"
+    },
+    {
+      "id": "ncl-doctor-3",
+      "feature": "Spawn failures back off instead of retrying identically forever",
+      "criteria": [
+        "A spawn returning exit 125 records a failure against the agent group rather than only logging it",
+        "Repeated 125s back off rather than retrying every 60s sweep — the 2026-08-12 outage produced 2193 identical attempts in 13 hours",
+        "A successful spawn clears the backoff state for that group",
+        "Backoff never permanently disables a group — it caps at an interval and keeps retrying at that interval"
+      ],
+      "status": "failing"
+    },
+    {
+      "id": "ncl-doctor-4",
+      "feature": "Doctor is invocable on demand and usable from cron",
+      "criteria": [
+        "The command runs every registered check and prints one report",
+        "It exits non-zero when any check fails and zero when all pass, so cron and CI can use the exit code",
+        "It prints nothing alarming when everything is healthy",
+        "It is rejected for container (agent) callers — probing spawns containers on the host, so it is operator-only",
+        "Output is renderable as both human text and --json"
+      ],
+      "status": "failing"
+    },
+    {
+      "id": "ncl-doctor-5",
+      "feature": "Orphaned messaging groups are surfaced (fix 01)",
+      "criteria": [
+        "A messaging_groups row whose channel_type has no registered adapter is reported, naming the group and the channel",
+        "A messaging_groups row with zero messaging_group_agents rows is reported as unwired",
+        "Rows deliberately left unwired are suppressible so known-good exceptions like Signal Note-to-Self stay quiet",
+        "A fully wired install with all adapters present produces no output at all"
+      ],
+      "status": "failing"
+    }
+  ]
+}

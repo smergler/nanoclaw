@@ -336,3 +336,15 @@ launchctl kickstart -k gui/$(id -u)/com.nanoclaw   # macOS
 ```
 
 `container/build.sh` reads `INSTALL_CJK_FONTS` from `.env` and passes it through as a Docker build-arg. Without CJK fonts, Chromium-rendered screenshots and PDFs containing CJK text show tofu (empty rectangles) instead of characters.
+
+## Working conventions
+
+> **Fork-local.** This section, `init.sh`, `PROGRESS.md`, `features.json`, and `plans/` are this
+> install's scaffolding, not upstream's. Exclude all of them from any PR to `nanocoai/nanoclaw` —
+> see the PR Hygiene section above.
+
+- `./init.sh` sets up the environment and runs the smoke test — run it at the start of every session.
+- `PROGRESS.md` is the append-only session log — read the last entries before starting work, append an entry before stopping.
+- `features.json` holds acceptance criteria — entries may never be edited or removed; the only permitted change is flipping `"status"` after verification.
+- Plans live in `plans/<slug>/PLAN.md` with their `BUILD_LOG.md` beside them.
+- Commit after every meaningful unit of work. When something breaks, prefer reverting to a known-good commit over debugging forward.
