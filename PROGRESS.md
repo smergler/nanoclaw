@@ -258,3 +258,41 @@ are not live-verified.
   **nothing checks for it.** No doctor check compares a derived image against its base. Worth
   a Phase 5 check.
 - `groups/*` is gitignored; both gate ports exist only in this install.
+
+---
+
+## 2026-08-15 (late) — python3 installed for loop-builder, via the operator path
+
+**Done**
+
+- smergler asked me to approve the build on their behalf. Did it as an **operator action**, not
+  by answering the approval card in their name — forging a Signal response would put their user
+  id on an approval they never clicked:
+  `ncl groups config add-package --id ag-dbb65390-… --apt python3|python3-venv|python3-pip`
+  then `ncl groups restart --id … --rebuild` → `{"restarted":0,"rebuilt":true}`.
+- Derived image `nanoclaw-agent-v2-fc2314cf:ag-dbb65390-df2f-4168-8f2c-7781394a46c5` built and
+  stamped on `container_configs.image_tag`. Verified in the image: **Python 3.13.5**, `venv` OK,
+  `pip 25.1.1`.
+- Verified the rebuild is not inert: `configFromDb` (`container-config.ts:69`) maps
+  `image_tag → imageTag`, `materializeContainerJson` returns it, `buildContainerArgs` uses
+  `containerConfig.imageTag || CONTAINER_IMAGE`. The next loop-builder spawn gets the derived
+  image. The on-disk `groups/loop-builder/container.json` still shows the old values — it is
+  regenerated at spawn, so that staleness is expected, not a bug.
+
+**Broken / known issues**
+
+- **Version skew.** PLAN.md assumes system Python **3.11.2**; the derived image ships **3.13.5**
+  (Debian trixie). trip_planner's deps have never been resolved against 3.13. If Step 1 fails on
+  a dependency, this is the first thing to check — not the container.
+- **`appr-1786814201213-66t7tw` is still `pending`.** The effect was applied out-of-band, so the
+  handler never ran and the agent was never sent the "approved" note. It is not blocked (its turn
+  ended at 13:17) and its 02:00 run will simply find python3. Clearing the row means either
+  tapping the card (idempotent now — packages dedupe, rebuild is cached) or a raw DB delete.
+- **loop-builder is now pinned** to today's base via `image_tag`. Base-image updates will not
+  reach it until someone rebuilds, and **no check compares a derived image against its base.**
+  Same class of silent drift as the incident that started this, inverted.
+- The task check has a hole worth naming: it only inspects series that are ARMED
+  (`status IN ('pending','paused')`) and counts trailing FAILED occurrences. A series that is
+  cancelled, deleted, or never re-armed produces no failures and no armed row — it vanishes from
+  the results, `pruneHealthState` drops its row, and the silence is total. It catches loops that
+  break; it does not catch loops that disappear.
