@@ -70,7 +70,17 @@ const SWEEP_INTERVAL_MS = 60_000;
  * everything healthy, and stayed quiet.
  */
 const DOCTOR_INTERVAL_MS = 15 * 60_000;
-let lastDoctorRun = 0;
+/**
+ * Seeded to process start, not 0, so the first doctor run is one interval in
+ * rather than on the first sweep tick.
+ *
+ * `ensureContainerRuntimeRunning()` only proves `docker info` answers. Docker
+ * Desktop enumerates its virtiofs shares at virtualization-process start, and
+ * that is precisely the subsystem the mount probe tests — probing during
+ * warmup risks a 125 that resolves itself, which would page the operator over
+ * nothing and teach them to ignore the next one.
+ */
+let lastDoctorRun = Date.now();
 // Absolute idle ceiling for a running container. If the heartbeat file hasn't
 // been touched in this long, the container is either stuck or doing genuinely
 // nothing — kill and restart on the next inbound.
