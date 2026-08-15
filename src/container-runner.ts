@@ -26,7 +26,19 @@ import {
 import { materializeContainerJson } from './container-config.js';
 import { getContainerConfig } from './db/container-configs.js';
 import { updateContainerConfigScalars } from './db/container-configs.js';
-import { CONTAINER_RUNTIME_BIN, hostGatewayArgs, readonlyMountArgs, stopContainer } from './container-runtime.js';
+import {
+  CONTAINER_RUNTIME_BIN,
+  DAEMON_REFUSED,
+  hostGatewayArgs,
+  readonlyMountArgs,
+  stopContainer,
+} from './container-runtime.js';
+import {
+  backoffRemainingSec,
+  recordSpawnFailure,
+  recordSpawnSuccess,
+  shouldSkipSpawn,
+} from './doctor/spawn-backoff.js';
 import { EGRESS_NETWORK, egressNetworkArgs, ensureEgressNetwork } from './egress-lockdown.js';
 import { composeGroupClaudeMd } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
@@ -97,6 +109,17 @@ export function wakeContainer(session: Session): Promise<boolean> {
   if (existing) {
     log.debug('Container wake already in-flight — joining existing promise', { sessionId: session.id });
     return existing;
+  }
+  // Spawn backoff: the daemon has been refusing this group's containers, so
+  // don't ask again yet. Returning false is the existing "transient failure"
+  // contract — the inbound row stays pending and the sweep retries later.
+  if (shouldSkipSpawn(session.agent_group_id)) {
+    log.debug('Container wake suppressed by spawn backoff', {
+      sessionId: session.id,
+      agentGroupId: session.agent_group_id,
+      retryInSec: backoffRemainingSec(session.agent_group_id),
+    });
+    return Promise.resolve(false);
   }
   const promise = spawnContainer(session)
     .then(() => true)
@@ -197,6 +220,16 @@ async function spawnContainer(session: Session): Promise<void> {
     activeContainers.delete(session.id);
     markContainerStopped(session.id);
     stopTypingRefresh(session.id);
+    // Exit 125 is the daemon REFUSING to create the container (bad mount,
+    // bad flag) — it never ran, an identical retry 60s later cannot work, and
+    // this is the shape of the 2026-08-12 outage. Every other outcome means
+    // the container did start, so the spawn path is healthy and any backoff
+    // for this group is cleared.
+    if (code === DAEMON_REFUSED) {
+      recordSpawnFailure(agentGroup.id);
+    } else {
+      recordSpawnSuccess(agentGroup.id);
+    }
     // code null = killed by signal (normal shutdown path), not a boot failure.
     if (code !== 0 && code !== null && stderrTail.length > 0) {
       log.warn('Container exited non-zero', { sessionId: session.id, code, containerName, stderrTail });

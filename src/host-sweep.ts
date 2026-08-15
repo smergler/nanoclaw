@@ -60,6 +60,17 @@ export function parseSqliteUtc(s: string): number {
 }
 
 const SWEEP_INTERVAL_MS = 60_000;
+/**
+ * Doctor cadence. Deliberately NOT every sweep: the mount probe spawns a real
+ * container, and 60s ticks would be 1,440 extra containers a day for a
+ * condition that changes rarely.
+ *
+ * Periodic and not boot-time on purpose. The 2026-08-12 outage began ~7h after
+ * host start and ran 13h under one PID; a boot assertion ran at 14:08, found
+ * everything healthy, and stayed quiet.
+ */
+const DOCTOR_INTERVAL_MS = 15 * 60_000;
+let lastDoctorRun = 0;
 // Absolute idle ceiling for a running container. If the heartbeat file hasn't
 // been touched in this long, the container is either stuck or doing genuinely
 // nothing — kill and restart on the next inbound.
@@ -163,6 +174,21 @@ async function sweep(): Promise<void> {
     log.error('Reject-with-reason sweep failed', { err });
   }
   // MODULE-HOOK:approvals-reason-sweep:end
+
+  // Health checks + escalation, on their own slower clock. Failures here are
+  // swallowed: the doctor reporting on a degraded install must never be the
+  // thing that stops the sweep from running.
+  // MODULE-HOOK:doctor-sweep:start
+  if (Date.now() - lastDoctorRun >= DOCTOR_INTERVAL_MS) {
+    lastDoctorRun = Date.now();
+    try {
+      const { runDoctor } = await import('./doctor/index.js');
+      await runDoctor();
+    } catch (err) {
+      log.error('Doctor sweep failed', { err });
+    }
+  }
+  // MODULE-HOOK:doctor-sweep:end
 
   setTimeout(sweep, SWEEP_INTERVAL_MS);
 }

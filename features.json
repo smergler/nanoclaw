@@ -59,6 +59,19 @@
         "A fully wired install with all adapters present produces no output at all"
       ],
       "status": "failing"
+    },
+    {
+      "id": "ncl-doctor-6",
+      "feature": "A scheduled task series that stops running is reported (2026-08-11 -> 08-15 miss)",
+      "criteria": [
+        "A task series with 2 or more consecutive failed runs is reported as failing, well before the scheduler's own auto-pause cap of 8",
+        "A series already auto-paused is reported as failing and the report carries the exact `ncl tasks resume <id>` command",
+        "A single failed run does not alert — one miss is usually transient",
+        "The result id is the series id, so escalation tracks the same subject across runs and alerts once, not nightly",
+        "A healthy armed series produces no output",
+        "Verified against the live install: trip-planner-build-722c (paused, 8 fails) and trip-planner-watch-6049 (4 fails) are both caught, dm-with-smergler's two hourly series both pass"
+      ],
+      "status": "failing"
     }
   ]
 }

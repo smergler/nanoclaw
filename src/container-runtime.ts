@@ -11,6 +11,14 @@ import { log } from './log.js';
 /** The container runtime binary name. */
 export const CONTAINER_RUNTIME_BIN = 'docker';
 
+/**
+ * Exit code meaning the daemon REFUSED to create the container — bad mount
+ * source, bad flag, unusable image reference. The container never ran, so an
+ * identical retry cannot succeed. Distinct from any non-zero exit produced by
+ * something running *inside* a container that did start.
+ */
+export const DAEMON_REFUSED = 125;
+
 /** CLI args needed for the container to resolve the host gateway. */
 export function hostGatewayArgs(): string[] {
   // On Linux, host.docker.internal isn't built-in — add it explicitly
