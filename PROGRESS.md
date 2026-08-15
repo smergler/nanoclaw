@@ -124,3 +124,74 @@ checks have only been exercised standalone.
   `logs/setup.log`, losing the 2026-08-11 12:20 entries. No other effect — daemon untouched.
 - `init.sh` fails at the agent-runner typecheck because `bun` is not on PATH on this host. The
   host suite runs fine via `pnpm test` directly. Pre-existing.
+
+---
+
+## 2026-08-15 (later) — deployed; escalation verified live; gates ported to node
+
+**Done**
+
+- Deployed. `pnpm run build`, `launchctl kickstart -k`. New PID 65794 at 11:53:13, migration
+  `health-state` applied to the live DB at 11:53:15, all three adapters reconnected. DB backed
+  up first to `data/v2.db.bak-pre-doctor-20260815` (integrity_check ok, 12 sessions).
+- **The escalation path works end to end on the real install.** First sweep fired 12:08:38 —
+  one interval after boot, as designed:
+  ```
+  INFO Signal message sent platformId="+13474649890" length=826
+  INFO Doctor alert delivered approver="signal:+13474649890" channelType="signal"
+  WARN Doctor state changed failing=["task:trip-planner-watch-6049","task:trip-planner-build-722c"]
+  ```
+  The alert text reconstructed from live data read-only is **826 chars — byte-exact against the
+  delivery log**, so what is recorded here is what was received.
+- 8 subjects in `health_state`: both mounts pass; `morning-calendar-briefin-a188`,
+  `dropped-messages-watch-cd49`, `session-heartbeat-57de`, `decline-gymnastics-b903` pass; the
+  two trip-planner series fail, both stamped `last_notified_at`.
+- **No duplicate on the second sweep.** 1 alert delivered, 1 state-change event across two
+  sweeps. Positive proof the second sweep actually RAN rather than being skipped: `docker events`
+  shows two anonymous containers created 12:23:41 (`inspiring_panini`, `nifty_saha`) — nameless
+  `docker run --rm --entrypoint true` probes, one per configured mount. Silence was a decision,
+  not an absence.
+- **Both gate scripts ported from python3 to node.** `gate-build.sh` was a trivial 30-line
+  translation. `gate-trip-planner.sh` is 185 lines of table parsing, sha256 fingerprinting, date
+  arithmetic and atomic state writes — too much to translate on trust, so equivalence was proven
+  instead: original Python vs new node, same repo, same seeded state, 8 cases covering every
+  branch (cold start / live state / corrupt state file / build-in-flight / state-changed /
+  quiet-active / quiet-elapsed / blocker-date carry-forward). Identical exit code, wake decision,
+  stderr line, state file and JSON in all 8. Only diff: python `round(x,1)` emits `0.0` where JS
+  emits `0` — same JSON number; the rounding formula was checked empirically across five values.
+- Both gates now exit 0 inside `nanoclaw-agent-v2-fc2314cf:latest` with the real mounts.
+- `ncl tasks resume trip-planner-build-722c` → `touched: 1`. Both series `pending`:
+  builder 2026-08-16T06:00Z, warden 2026-08-16T11:00Z.
+
+**Current state**
+
+Doctor live and quiet. Both loops armed with working gates. Neither has had a successful run
+yet — `trailingFailedRuns` reads occurrence history, so both still report failing until a run
+completes. That is correct: resuming is not evidence.
+
+**What's next**
+
+- 02:00 builder, 07:00 warden. First green run resets the streak; the doctor's next sweep then
+  reports pass and sends the recovery DM. **That DM is the remaining unverified half of
+  `ncl-doctor-2`.**
+- Phase 3 still gated on #2504 (no reply; deadline 08-22). Phases 4.2 and 5 not started.
+
+**features.json — deliberately still all `failing`**
+
+The rule is verification against the running application, and partial is not verified:
+- `ncl-doctor-1`: the exists-but-125 case was proven on `/Volumes/manual backup/nanoclaw-youtube`,
+  but that path is not a *configured* mount, so the criterion is not met as written.
+- `ncl-doctor-2`: failing-side verified live and de-duplication proven; the recovery DM has not
+  happened yet.
+- `ncl-doctor-3`: no exit-125 spawn has occurred since deploy. Unit-tested only.
+- `ncl-doctor-6`: four of five criteria verified live; "a single failed run does not alert" has
+  not been observed on the running install.
+
+**Broken / known issues**
+
+- The container test of the warden gate wrote real state — `last_digest` in
+  `groups/loop-warden/loop-state/trip_planner.json` moved 08-11 → 08-15. No behavioural impact:
+  `build_in_flight` short-circuits to wake daily and never consults it while the build is
+  unfinished.
+- `groups/*` is gitignored, so neither gate fix is under version control. They exist only in this
+  install. A `groups/` wipe loses both.
