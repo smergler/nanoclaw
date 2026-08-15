@@ -8,12 +8,20 @@
  */
 import { log } from '../log.js';
 import { mountCheck } from './checks/mounts.js';
+import { progressCheck } from './checks/progress.js';
 import { taskCheck } from './checks/tasks.js';
 import { escalate } from './escalate.js';
 import { runChecks } from './runner.js';
 import type { Check, CheckResult } from './types.js';
 
-export const DEFAULT_CHECKS: Check[] = [mountCheck, taskCheck];
+/**
+ * Order is presentation only — results are keyed by subject id, not position.
+ *
+ * `tasks` answers "is it running", `progress` answers "is it accomplishing
+ * anything". Both are needed: a loop can be dead in either direction, and each
+ * one alone reads the other's failure as healthy.
+ */
+export const DEFAULT_CHECKS: Check[] = [mountCheck, taskCheck, progressCheck];
 
 /**
  * One pass. Returns the results so a future CLI surface can render them.

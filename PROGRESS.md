@@ -296,3 +296,67 @@ are not live-verified.
   cancelled, deleted, or never re-armed produces no failures and no armed row — it vanishes from
   the results, `pruneHealthState` drops its row, and the silence is total. It catches loops that
   break; it does not catch loops that disappear.
+
+---
+
+## 2026-08-15 (evening) — the loop produced real work; progress check added
+
+**Done**
+
+- Discord scoped-admin grant confirmed (`discord:632922878748393474 | admin | ag-dbb65390-… |
+  18:52:44`). `pickApprover` checks group admins before global admins and owners, so
+  loop-builder approvals now route to Discord. Signal won before only because `getOwners()`
+  orders by `granted_at` and that id was granted first.
+- **Re-delivering the pending card to Discord FAILED, correctly.** Writing it into
+  loop-builder's outbound queue was rejected 3× by the destination guard:
+  `unauthorized channel destination: ag-dbb65390-… cannot send to discord/…`. From the guard's
+  side that write is indistinguishable from an agent reaching a channel it isn't wired to. Not
+  worked around. The original Signal card went out because the approvals path calls
+  `adapter.deliver()` directly, host-initiated, which never touches that guard. Residue: one
+  outbound row permanently marked failed.
+- **The loop did real work.** Run `trip-planner-build-722c-0b05` on the derived image
+  (verified in the live container: Python 3.13.5, `trip_planner` RW=true) produced
+  `f22fa86` — `_parse_time()` was uppercasing the strptime FORMAT along with the input, turning
+  `%p` into `%P`, so every AM/PM anchor silently failed to parse and anchor checks always
+  reported found=False. Baseline 27/34 → **34/34**. Python 3.13 caused no dependency trouble;
+  the version-skew worry was unfounded.
+- **But the run did not finish**: `You've hit your session limit · resets 3pm`. `planner/llm.py`,
+  `evals/results/`, `tests/test_llm.py` left uncommitted. The occurrence still acked
+  **completed** and the task check reported **pass** — a quota exhaustion is indistinguishable
+  from success at every layer of the pipeline.
+
+**New: `src/doctor/checks/progress.ts` (`ncl-doctor-7`)**
+
+Liveness is not progress. `checks/tasks.ts` asks "is it running"; this asks "is it accomplishing
+anything", using commits on the work branch — which `gate-build.sh` already computes on every run
+and discards.
+
+- Opt-in per group via `groups/<folder>/progress.json` (host paths — the doctor runs on the
+  host). Groups without one produce no output.
+- Window derived from occurrence history, no stored counter, matching `trailingFailedRuns`.
+- **`doneWhenAllExist` is the load-bearing part.** A finished project also produces zero commits;
+  without a done-test this would flag every completed loop forever, and a monitor that cries wolf
+  about success is worse than none.
+- Unreadable repo / missing branch → inconclusive, never fail.
+- 9 tests. Suite 1321 green (107 files). Deployed 15:21:47, PID 37358.
+
+Verified against live data read-only: real state → `[PASS] 1 commit(s) on loop/trip-planner
+across the last 2 runs`; simulated stall (window since now) → `[FAIL] 2 runs completed … and
+produced ZERO commits`.
+
+**Current state**
+
+Doctor runs 4 checks: mounts, tasks, progress, and the escalation on top. `trip-planner-build-722c`
+passes both liveness and progress. `trip-planner-watch-6049` still fails liveness (no successful
+run yet; next 07:00).
+
+**Broken / known issues**
+
+- `appr-1786814201213-66t7tw` still `pending` and now definitively moot — the packages it asked
+  for are installed and already used.
+- The **series-disappears** gap from the previous entry is still open: a cancelled or deleted
+  series produces no armed row, no failures, and `pruneHealthState` drops its record. Silence is
+  total. `progress.json` would keep reporting for such a series only while a completed occurrence
+  remains in history.
+- Derived-image pinning still unmonitored: loop-builder now has `image_tag` set, and nothing
+  compares a derived image against its base.

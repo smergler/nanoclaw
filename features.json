@@ -6,9 +6,9 @@
       "feature": "Mount reachability probe detects what existence checks miss",
       "criteria": [
         "A configured additional_mount whose host path does not exist is reported as failing",
-        "A configured additional_mount whose host path EXISTS and is readable but which docker refuses with exit 125 is reported as failing — this is the case fs.realpathSync passes and is the whole reason the check exists",
+        "A configured additional_mount whose host path EXISTS and is readable but which docker refuses with exit 125 is reported as failing \u2014 this is the case fs.realpathSync passes and is the whole reason the check exists",
         "The report names the host-path-exists contradiction explicitly, so the reader does not start by ls-ing a directory that is demonstrably fine",
-        "Distinct host paths are deduped — two groups sharing one mount produce one probe, not two",
+        "Distinct host paths are deduped \u2014 two groups sharing one mount produce one probe, not two",
         "A probe that hangs is killed by a timeout and reported as inconclusive, never wedging the caller",
         "A non-125 non-zero exit is reported as a distinct category from a 125, because it means the image or entrypoint is wrong rather than the mount"
       ],
@@ -21,7 +21,7 @@
         "healthy -> failing -> healthy produces exactly two admin DMs, not one per check run",
         "A check that stays failing across many consecutive runs produces no further DMs after the first",
         "Recovery produces a DM saying it recovered",
-        "Transition state survives a host restart — a restart during a failing period does not re-fire the alert",
+        "Transition state survives a host restart \u2014 a restart during a failing period does not re-fire the alert",
         "With every check healthy the runner produces no output and sends no DM"
       ],
       "status": "passing"
@@ -31,9 +31,9 @@
       "feature": "Spawn failures back off instead of retrying identically forever",
       "criteria": [
         "A spawn returning exit 125 records a failure against the agent group rather than only logging it",
-        "Repeated 125s back off rather than retrying every 60s sweep — the 2026-08-12 outage produced 2193 identical attempts in 13 hours",
+        "Repeated 125s back off rather than retrying every 60s sweep \u2014 the 2026-08-12 outage produced 2193 identical attempts in 13 hours",
         "A successful spawn clears the backoff state for that group",
-        "Backoff never permanently disables a group — it caps at an interval and keeps retrying at that interval"
+        "Backoff never permanently disables a group \u2014 it caps at an interval and keeps retrying at that interval"
       ],
       "status": "failing"
     },
@@ -44,7 +44,7 @@
         "The command runs every registered check and prints one report",
         "It exits non-zero when any check fails and zero when all pass, so cron and CI can use the exit code",
         "It prints nothing alarming when everything is healthy",
-        "It is rejected for container (agent) callers — probing spawns containers on the host, so it is operator-only",
+        "It is rejected for container (agent) callers \u2014 probing spawns containers on the host, so it is operator-only",
         "Output is renderable as both human text and --json"
       ],
       "status": "failing"
@@ -66,10 +66,24 @@
       "criteria": [
         "A task series with 2 or more consecutive failed runs is reported as failing, well before the scheduler's own auto-pause cap of 8",
         "A series already auto-paused is reported as failing and the report carries the exact `ncl tasks resume <id>` command",
-        "A single failed run does not alert — one miss is usually transient",
+        "A single failed run does not alert \u2014 one miss is usually transient",
         "The result id is the series id, so escalation tracks the same subject across runs and alerts once, not nightly",
         "A healthy armed series produces no output",
         "Verified against the live install: trip-planner-build-722c (paused, 8 fails) and trip-planner-watch-6049 (4 fails) are both caught, dm-with-smergler's two hourly series both pass"
+      ],
+      "status": "failing"
+    },
+    {
+      "id": "ncl-doctor-7",
+      "feature": "A loop that runs without accomplishing anything is reported (liveness is not progress)",
+      "criteria": [
+        "A series whose runs complete but produce zero commits on its work branch is reported as failing, after a configurable number of runs (default 2)",
+        "A series whose definition-of-done artifacts are all present is NEVER reported as failing \u2014 finished is not stalled, and crying wolf about success is worse than no monitor",
+        "A single completed run is not enough to call a stall",
+        "An unreadable repo or missing branch is inconclusive, never a failure",
+        "Groups without a progress.json make no progress claim and produce no output",
+        "The report names the run log path, because that is where the agent explains itself",
+        "Demonstrated case: 2026-08-15, the builder hit its Claude session quota mid-task, exited cleanly, acked completed, and the task check reported pass"
       ],
       "status": "failing"
     }
