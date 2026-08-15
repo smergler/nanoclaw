@@ -213,6 +213,23 @@ describe('escalate', () => {
     expect(deliver).toHaveBeenCalledTimes(2);
   });
 
+  it('only stamps last_notified_at on subjects actually named in the message', async () => {
+    // Observed live 2026-08-15: a recovery DM about one series refreshed the
+    // notified timestamp of an unrelated series that stayed failing and was
+    // not mentioned in it.
+    await escalate([res('task:a', 'fail'), res('task:b', 'fail')]);
+    const bStamp = getHealthState('task:b')?.last_notified_at;
+    expect(bStamp).not.toBeNull();
+
+    // task:a recovers (that IS the alert); task:b is unchanged and unmentioned.
+    await escalate([res('task:a', 'pass'), res('task:b', 'fail')]);
+
+    expect(deliver).toHaveBeenCalledTimes(2);
+    expect(sentText(1)).toContain('RECOVERED');
+    expect(sentText(1)).not.toContain('task:b');
+    expect(getHealthState('task:b')?.last_notified_at).toBe(bStamp);
+  });
+
   it('batches every transition in one run into a single DM', async () => {
     await escalate([res('mount:/a', 'fail'), res('task:t', 'fail'), res('mount:/b', 'fail')]);
     expect(deliver).toHaveBeenCalledTimes(1);

@@ -16,6 +16,7 @@ const envConfig = readEnvFile([
   'CONTAINER_CPU_LIMIT',
   'CONTAINER_MEMORY_LIMIT',
   'CONTAINER_PIDS_LIMIT',
+  'CONTAINER_IDLE_CEILING_MIN',
   'NANOCLAW_EGRESS_LOCKDOWN',
   'NANOCLAW_EGRESS_NETWORK',
   'ONECLI_GATEWAY_CONTAINER',
@@ -86,6 +87,28 @@ export const CONTAINER_MEMORY_LIMIT = process.env.CONTAINER_MEMORY_LIMIT || envC
 // blocks it from spawning subprocesses, and neither is reported as a PID limit.
 // Empty = no cap.
 export const CONTAINER_PIDS_LIMIT = process.env.CONTAINER_PIDS_LIMIT ?? envConfig.CONTAINER_PIDS_LIMIT ?? '2048';
+
+/**
+ * How long a container may go SILENT before the host kills it, in minutes.
+ *
+ * An idle ceiling, not a runtime cap. `touchHeartbeat()` fires on every SDK
+ * event (container/agent-runner/src/poll-loop.ts:488), so an agent that is
+ * actually working refreshes it continuously and is never reaped by this; host
+ * sweep further widens the window to a declared Bash timeout, so a long tool
+ * call does not trip it either. It exists to collect containers that woke, did
+ * nothing, and would otherwise sit there — the case that killed loop-builder
+ * every night while its gate script was failing.
+ *
+ * Raising it buys headroom for a long silent turn and costs resources: an idle
+ * container lingers this long before collection. `wakeContainer` no-ops when
+ * one is already running, so a longer-lived idle container is reused on the
+ * next wake rather than double-spawned.
+ *
+ * Default 30 preserves existing behavior for any install that doesn't set it.
+ */
+const idleCeilingMin = Number(process.env.CONTAINER_IDLE_CEILING_MIN ?? envConfig.CONTAINER_IDLE_CEILING_MIN ?? '30');
+export const CONTAINER_IDLE_CEILING_MS =
+  (Number.isFinite(idleCeilingMin) && idleCeilingMin > 0 ? idleCeilingMin : 30) * 60 * 1000;
 
 // Egress lockdown — force all agent traffic through the OneCLI gateway on a
 // no-internet Docker network. Off by default; consumed by src/egress-lockdown.ts.

@@ -24,7 +24,7 @@
         "Transition state survives a host restart — a restart during a failing period does not re-fire the alert",
         "With every check healthy the runner produces no output and sends no DM"
       ],
-      "status": "failing"
+      "status": "passing"
     },
     {
       "id": "ncl-doctor-3",

@@ -29,6 +29,7 @@
 import type Database from 'better-sqlite3';
 import fs from 'fs';
 
+import { CONTAINER_IDLE_CEILING_MS } from './config.js';
 import { ensureEgressNetwork } from './egress-lockdown.js';
 import { getActiveSessions, isTaskThread, updateSession } from './db/sessions.js';
 import { getAgentGroup } from './db/agent-groups.js';
@@ -83,8 +84,10 @@ const DOCTOR_INTERVAL_MS = 15 * 60_000;
 let lastDoctorRun = Date.now();
 // Absolute idle ceiling for a running container. If the heartbeat file hasn't
 // been touched in this long, the container is either stuck or doing genuinely
-// nothing — kill and restart on the next inbound.
-export const ABSOLUTE_CEILING_MS = 30 * 60 * 1000;
+// nothing — kill and restart on the next inbound. Operator-tunable via
+// CONTAINER_IDLE_CEILING_MIN; see the note in config.ts for why raising it does
+// not affect an agent that is actually working.
+export const ABSOLUTE_CEILING_MS = CONTAINER_IDLE_CEILING_MS;
 // Stuck tolerance window applied per 'processing' claim — "did we see any
 // signs of life since this message was claimed?"
 export const CLAIM_STUCK_MS = 60 * 1000;

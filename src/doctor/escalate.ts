@@ -178,6 +178,15 @@ export async function escalate(results: CheckResult[]): Promise<Transition[]> {
     delivered = await deliverAlert(composeAlert(transitions));
   }
 
+  // Only the subjects actually named in the message that went out. `delivered`
+  // is a per-RUN boolean, so using it alone would stamp every failing subject
+  // whenever any alert lands — refreshing the timestamp of a subject the reader
+  // was never told about on this run. Harmless for the retry logic, which only
+  // reads null vs non-null, but the stored time would be a lie the moment
+  // anything reports "failing since / last told you N ago".
+  const notifiedNow = new Set(delivered ? transitions.map((t) => t.result.id) : []);
+  const stamp = new Date().toISOString();
+
   for (const result of results) {
     // inconclusive holds the previous state — no write at all, so `since`
     // keeps counting from the last thing we actually established.
@@ -185,7 +194,7 @@ export async function escalate(results: CheckResult[]): Promise<Transition[]> {
 
     if (result.status === 'fail') {
       const alreadyNotified = getHealthState(result.id)?.last_notified_at ?? null;
-      const notifiedAt = delivered ? new Date().toISOString() : alreadyNotified;
+      const notifiedAt = notifiedNow.has(result.id) ? stamp : alreadyNotified;
       upsertHealthState(result.id, 'fail', notifiedAt);
     } else {
       // Clearing last_notified_at on recovery re-arms the next failure.
