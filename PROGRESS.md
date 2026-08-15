@@ -195,3 +195,66 @@ The rule is verification against the running application, and partial is not ver
   unfinished.
 - `groups/*` is gitignored, so neither gate fix is under version control. They exist only in this
   install. A `groups/` wipe loses both.
+
+---
+
+## 2026-08-15 (afternoon) — builder ran green; the gate fix was only half the fix
+
+**Done**
+
+- `CONTAINER_IDLE_CEILING_MIN` added to config (default 30, set to 90 here).
+  `ABSOLUTE_CEILING_MS` now reads it. **Worth recording why this matters less than it
+  looks:** the ceiling gates *heartbeat age*, not runtime, and `touchHeartbeat()` fires on
+  every SDK event (`poll-loop.ts:488`); host-sweep also widens it to a declared Bash timeout.
+  A working agent is never reaped by it. It only kills containers that go SILENT — which is
+  exactly what happened to loop-builder nightly while its gate was failing. Raising the
+  ceiling would not have saved the loops; it would have made each corpse linger longer.
+- `ncl tasks run --id trip-planner-build-722c` at 13:14:57. Container spawned 13:15:32, row
+  `trip-planner-build-722c-5251` **completed** by 13:17. First successful agent wake since
+  08-11. `loop/trip-planner` branch created.
+- **The gate fix was necessary but not sufficient.** trip_planner is a *Python* project;
+  PLAN.md Step 1 is venv + pytest + ClaudeCLIClient. The agent woke, got one step further,
+  and filed `install_packages` for `python3 python3-venv python3-pip` — approval
+  `appr-1786814201213-66t7tw`, DM sent 13:16:50, **still pending, awaiting smergler**. Its
+  own words: "The container currently has no python3 binary at all (contradicting PLAN.md's
+  assumption of a system Python 3.11.2)". That version is precisely what the old
+  locally-built image 935e29407532 carried — independent confirmation the plan was written
+  against the pre-hardened image.
+  Porting the gates addressed the gate only. The `packages_apt` route — dismissed in the
+  morning write-up as "standing on the same loose floorboard" — was the right call for the
+  builder all along. The warden port stands: it is a read-only reporter that never needed
+  Python.
+- Recovery verified end to end. 13:29:40 sweep: `failing=[] recovered=["trip-planner-build-722c"]`,
+  100-char DM. **Two doctor DMs, ever** — 12:08 failing, 13:29 recovered.
+- **Defect found on the live install and fixed.** That same sweep refreshed
+  `trip-planner-watch-6049`'s `last_notified_at` to 17:29:40 — a series that stayed failing
+  and was *not* named in that message. `delivered` is a per-run boolean and was being applied
+  to every failing subject. No behavioural impact (the retry path reads only null vs
+  non-null) but the stored time was a lie. Now stamps only ids in the delivered transition
+  set. Regression test added. Deployed 13:31:49 (PID 25942); pending approval survived.
+
+**Current state**
+
+`health_state`: 7 pass, 1 fail (`trip-planner-watch-6049`, correctly — it has not had a
+successful run yet; its next is 07:00 tomorrow). Builder armed for 02:00, unchanged by the
+manual run. 1312 tests green.
+
+**features.json**
+
+`ncl-doctor-2` → **passing**. All five criteria verified against the running host: exactly two
+DMs across healthy→failing→healthy; no repeat across three sweeps while failing; a recovery DM
+naming the recovery; no re-fire after the 13:14 restart; and silence on the 12:23 sweep —
+proven to have RUN by two nameless probe containers in `docker events`, not inferred from
+absent log lines. The rest stay `failing`; see the previous entry for which criteria are and
+are not live-verified.
+
+**Broken / known issues**
+
+- **The builder cannot proceed until the `install_packages` approval is answered.** Nothing
+  else unblocks it.
+- Approving builds a derived image and stamps `image_tag` on loop-builder's config, pinning
+  the group to that base. Future base-image updates will not reach it until someone rebuilds.
+  That is the same class of silent drift that caused this incident, in mirror image — and
+  **nothing checks for it.** No doctor check compares a derived image against its base. Worth
+  a Phase 5 check.
+- `groups/*` is gitignored; both gate ports exist only in this install.
