@@ -152,7 +152,8 @@ describe('writeChannelSetting', () => {
   });
 });
 
-describe('resolveUpdateTarget', () => {
+// Git fixture setup can exceed the 5s default on slower machines.
+describe('resolveUpdateTarget', { timeout: 30_000 }, () => {
   const resolve = (install: string, channel: 'stable' | 'beta' | 'edge') =>
     resolveUpdateTarget({ projectRoot: install, remote: 'upstream', channel });
 
@@ -205,7 +206,7 @@ describe('resolveUpdateTarget', () => {
   });
 });
 
-describe('prepare on a release tag', () => {
+describe('prepare on a release tag', { timeout: 30_000 }, () => {
   it('stages the newer stable tag and records the channel', () => {
     const { install, shas } = fixture('v2.3.0');
     // prepareUpdate's runner inherits process.env; keep the operator's git config (e.g. merge.ff) out.

@@ -79,7 +79,8 @@ function project(): string {
 
 const dockerVerbs = () => engine.calls.filter((call) => call[0] === 'docker').map((call) => call[1]);
 
-describe('Iron Proxy setup on an arm64 Linux engine', () => {
+// setup.ts takes the darwin branch before the arm64 check, so this Linux-only path can't run on macOS.
+describe.skipIf(process.platform === 'darwin')('Iron Proxy setup on an arm64 Linux engine', () => {
   it('stops before building or fetching anything when the engine cannot run amd64 images', async () => {
     const root = project();
     const failure = await run(['--with-control'], root).catch((error: unknown) => error);
